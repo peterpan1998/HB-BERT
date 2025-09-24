@@ -17,7 +17,8 @@
 from __future__ import absolute_import
 from __future__ import division
 from __future__ import print_function
-
+import sys
+import os
 import copy
 import json
 import math
@@ -26,6 +27,9 @@ import torch
 import torch.nn as nn
 from torch.nn import CrossEntropyLoss
 import torch.nn.functional as F
+from config import hbert_config
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
+from model.neuron import DualThresholdSelfregulatingIntegrate, DualThresholdSelfregulatingIntegrateAction
 def gelu(x):
     """Implementation of the gelu activation function.
         For information: OpenAI GPT's gelu is slightly different (and gives slightly different results):
@@ -156,251 +160,6 @@ class BERTEmbeddings(nn.Module):
         embeddings = self.dropout(embeddings)
         return embeddings
 
-# import spikingjelly.clock_driven as spk
-# from  spikingjelly.clock_driven import neuron ,surrogate
-# import pytorch_spiking
-# print(dir(neuron))  # 这将显示模块中的所有内容
-
-
-
-
-''' #*********************修改的q，k，v矩阵生成***************************# '''
-# #
-# class BERTSelfAttention(nn.Module):
-#     def __init__(self, config):
-#         super(BERTSelfAttention, self).__init__()
-#         if config.hidden_size % config.num_attention_heads != 0:
-#             raise ValueError(
-#                 "The hidden size (%d) is not a multiple of the number of attention "
-#                 "heads (%d)" % (config.hidden_size, config.num_attention_heads))
-#         self.num_attention_heads = config.num_attention_heads
-#         self.attention_head_size = int(config.hidden_size / config.num_attention_heads)
-#         self.all_head_size = self.num_attention_heads * self.attention_head_size
-#         # 注意：这里的 all_head_size 就等于config.hidden_size，应该是一种简化，或者是为了从embedding到最后输出维度都保持一致
-#         # 这样使得多个attention头合起来维度还是config.hidden_size
-#         # 而attention_head_size就是每个attention头的维度，这个维度其实是可以人为指定的，但实现起来代码会比较麻烦
-#
-#         self.query = nn.Linear(config.hidden_size, self.all_head_size) #config.hidden_size=512
-#         self.key = nn.Linear(config.hidden_size, self.all_head_size)
-#         self.value = nn.Linear(config.hidden_size, self.all_head_size)
-#
-#         self.dropout = nn.Dropout(config.attention_probs_dropout_prob)
-#
-#         # 脉冲神经元
-#         self.query_lif = spk.neuron.LIFNode()
-#         self.sum_lif = spk.neuron.LIFNode()
-#         self.key_lif = spk.neuron.LIFNode()
-#         self.value_lif = spk.neuron.LIFNode()
-#         self.lif1_query = neuron.MultiStepLIFNode(tau=2., surrogate_function=surrogate.ATan(alpha=2.0), backend='torch',v_threshold=1.)
-#         self.lif2_key = neuron.MultiStepLIFNode(tau=2., surrogate_function=surrogate.ATan(alpha=2.0), backend='torch',v_threshold=1.)
-#         self.lif3_value = neuron.MultiStepLIFNode(tau=2., surrogate_function=surrogate.ATan(alpha=2.0), backend='torch',v_threshold=1.)
-#         self.lif4_sum = neuron.MultiStepLIFNode(tau=2., surrogate_function=surrogate.ATan(alpha=2.0), backend='torch',v_threshold=1.)
-#     def transpose_for_scores(self, x):
-#         # shape of x: batch_size * seq_length * hidden_size
-#         # 这个操作是把hidden_size分解为 self.num_attention_heads * self.attention_head_size
-#         # 然后再交换 seq_length维度 和 num_attention_heads维度
-#         # 为什么要做这一步：因为attention是要对query中的每个字和key中的每个字做点积，即是在 seq_length 维度上
-#         # query和key的点积是 [seq_length * attention_head_size] * [attention_head_size * seq_length]=[seq_length * seq_length]
-#         new_x_shape = x.size()[:-1] + (self.num_attention_heads, self.attention_head_size)  # 这里是一个维度拼接：(1,2)+(4,5) -> (1, 2, 4, 5)
-#         x = x.view(*new_x_shape)
-#         return x.permute(0, 2, 1, 3)
-#
-#     def forward(self, hidden_states, attention_mask):
-#         mixed_query_layer = self.query(hidden_states)#b,seq_length,hidden_size
-#         mixed_key_layer = self.key(hidden_states)
-#         mixed_value_layer = self.value(hidden_states)
-#
-#         # shape of query_layer: batch_size * num_attention_heads * seq_length * attention_head_size
-#         # transpose_for_scores函数调整矩阵的形状 首先将 hidden_size 分解为 num_attention_heads * attention_head_size。
-#         # 例如，hidden_size 为 768，num_attention_heads 为 12，则 attention_head_size 为 64。
-#         # query_layer = self.transpose_for_scores(mixed_query_layer).detach()
-#         query_layer = self.transpose_for_scores(mixed_query_layer)
-#         with torch.no_grad():
-#
-#             query_layer = self.query_lif(query_layer)
-#             # print(query_layer,'*****************************')
-#         # key_layer = self.transpose_for_scores(mixed_key_layer).detach()
-#         key_layer = self.transpose_for_scores(mixed_key_layer)
-#         with torch.no_grad():
-#
-#             key_layer = self.key_lif(key_layer)
-#         value_layer = self.transpose_for_scores(mixed_value_layer)
-#         with torch.no_grad():
-#
-#             value_layer = self.value_lif(value_layer)+value_layer
-#         hadamard_key_val = torch.mul(query_layer,key_layer)
-#         column_sums_hadamard_key_val = torch.sum(hadamard_key_val, dim=0)
-#         column_sums_hadamard_key_val_snn = self.sum_lif(column_sums_hadamard_key_val)
-#         context_layer = column_sums_hadamard_key_val_snn + value_layer#[32,12,256,64]
-#
-#
-#
-#         attention_mask_expanded = attention_mask.expand(-1, 12, -1, -1)  # [32, 12, 1, 256] -> [32, 12, 256, 256]
-#         context_layer_expanded = context_layer.repeat(1, 1, 1, 4)  # [32, 12, 256, 64] -> [32, 12, 256, 256]
-#         context_layer_with_mask = context_layer_expanded + attention_mask_expanded
-#         context_layer = F.adaptive_avg_pool2d(context_layer_with_mask, (256, 64))  # [32, 12, 256, 256] -> [32, 12, 256, 64]
-#
-#         # context_layer = context_layer+attention_mask
-#         # print(context_layer.shape, '111111111111111111111111111111111111111')
-#         context_layer = context_layer.permute(0, 2, 1,3).contiguous()  # contiguous()的作用是在permute(0, 2, 1, 3)或者transpose(-1, -2)之后让内存变得连续，加快计算效率
-#         new_context_layer_shape = context_layer.size()[:-2] + (self.all_head_size,)#[32,256,768]
-#         # print(new_context_layer_shape,'222222222222222222222222222222222222222')
-#         context_layer = context_layer.view(*new_context_layer_shape)#[32,256,768]
-#         # print(context_layer.shape,'33333333333333333333333333333333333333')
-#
-#         return context_layer
-
-''' #************************************************# '''
-
-
-
-''' #******************验证矩阵乘对结果的影响******************************# '''
-# class BERTSelfAttention(nn.Module):
-#     """self attention 是Bert的精髓，但它维度的变化确实比较复杂"""
-#     def __init__(self, config):
-#         super(BERTSelfAttention, self).__init__()
-#         if config.hidden_size % config.num_attention_heads != 0:
-#             raise ValueError(
-#                 "The hidden size (%d) is not a multiple of the number of attention "
-#                 "heads (%d)" % (config.hidden_size, config.num_attention_heads))
-#         self.num_attention_heads = config.num_attention_heads
-#         self.attention_head_size = int(config.hidden_size / config.num_attention_heads)
-#         self.all_head_size = self.num_attention_heads * self.attention_head_size
-#         # 注意：这里的 all_head_size 就等于config.hidden_size，应该是一种简化，或者是为了从embedding到最后输出维度都保持一致
-#         # 这样使得多个attention头合起来维度还是config.hidden_size
-#         # 而attention_head_size就是每个attention头的维度，这个维度其实是可以人为指定的，但实现起来代码会比较麻烦
-#
-#         self.query = nn.Linear(config.hidden_size, self.all_head_size) #config.hidden_size=512
-#         self.key = nn.Linear(config.hidden_size, self.all_head_size)
-#         self.value = nn.Linear(config.hidden_size, self.all_head_size)
-#
-#         self.dropout = nn.Dropout(config.attention_probs_dropout_prob)
-#         # 脉冲神经元
-#         self.query_lif = spk.neuron.LIFNode()
-#         self.sum_lif = spk.neuron.LIFNode()
-#         self.key_lif = spk.neuron.LIFNode()
-#         self.value_lif = spk.neuron.LIFNode()
-#         self.lif3_value = neuron.MultiStepLIFNode(tau=2., surrogate_function=surrogate.ATan(alpha=2.0), backend='torch',
-#                                                   v_threshold=1.)
-#     def transpose_for_scores(self, x):
-#         # shape of x: batch_size * seq_length * hidden_size
-#         # 这个操作是把hidden_size分解为 self.num_attention_heads * self.attention_head_size
-#         # 然后再交换 seq_length维度 和 num_attention_heads维度
-#         # 为什么要做这一步：因为attention是要对query中的每个字和key中的每个字做点积，即是在 seq_length 维度上
-#         # query和key的点积是 [seq_length * attention_head_size] * [attention_head_size * seq_length]=[seq_length * seq_length]
-#         new_x_shape = x.size()[:-1] + (
-#         self.num_attention_heads, self.attention_head_size)  # 这里是一个维度拼接：(1,2)+(4,5) -> (1, 2, 4, 5)
-#         x = x.view(*new_x_shape)
-#         return x.permute(0, 2, 1, 3)
-#
-#     def forward(self, hidden_states,attention_mask):  # attention_mask：形状为 [batch_size, 1, 1, seq_length]，用于在计算注意力时忽略填充位置（通常是填充的零值）。
-#             # shape of hidden_states: batch_size * seq_length * hidden_size 表示一批输入序列，每个序列中的每个元素由 hidden_size 维度的向量表示。
-#             # shape of mixed_*_layer: batch_size * seq_length * hidden_size
-#         mixed_query_layer = self.query(hidden_states)  # .detach() #通过 nn.Linear 进行线性变换，将 hidden_states 投影为 query。输出形状为 [batch_size, seq_length, hidden_size]。
-#         mixed_key_layer = self.key(hidden_states)  # .detach()  #通过 nn.Linear 进行线性变换，将 hidden_states 投影为 key。输出形状与 query 相同，为 [batch_size, seq_length, hidden_size]。
-#         mixed_value_layer = self.value(hidden_states)  # 通过 nn.Linear 进行线性变换，将 hidden_states 投影为 value。输出形状与 query 和 key 相同，为 [batch_size, seq_length, hidden_size]。
-#         query_layer = self.transpose_for_scores(mixed_query_layer)
-#         with torch.no_grad():
-#             query_layer1 = self.query_lif(query_layer)
-#         query_layer = query_layer1+query_layer
-#         key_layer = self.transpose_for_scores(mixed_key_layer)
-#         with torch.no_grad():
-#             key_layer1 = self.key_lif(key_layer)
-#         key_layer = key_layer1+key_layer
-#         value_layer = self.transpose_for_scores(mixed_value_layer)
-#         with torch.no_grad():
-#             value_layer1 = self.lif3_value(value_layer) + value_layer
-#             # Take the dot product between "query" and "key" to get the raw attention scores.
-#             # shape of attention_scores: batch_size * num_attention_heads * seq_length * seq_length
-#         value_layer = value_layer1+value_layer
-#         attention_scores = torch.matmul(query_layer, key_layer.transpose(-1, -2))
-#         attention_scores /= math.sqrt(self.attention_head_size)
-#             # Apply the attention mask is (precomputed for all layers in BertModel forward() function)
-#             # shape of attention_mask: batch_size * 1 * 1 * seq_length. 它可以自动广播到和attention_scores一样的维度
-#             # 我们初始输入的attention_mask是：batch_size * seq_length，做了两次unsqueeze之后得到当前的attention_mask
-#         attention_scores = attention_scores + attention_mask
-#             # Normalize the attention scores to probabilities. Softmax 不改变维度
-#             # shape of attention_scores: batch_size * num_attention_heads * seq_length * seq_length
-#         attention_probs = nn.Softmax(dim=-1)(attention_scores)
-#         attention_probs = self.dropout(attention_probs)  # 防止过拟合
-#             # shape of value_layer: batch_size * num_attention_heads * seq_length * attention_head_size
-#             # shape of first context_layer: batch_size * num_attention_heads * seq_length * attention_head_size
-#             # shape of second context_layer: batch_size * seq_length * num_attention_heads * attention_head_size
-#             # context_layer 维度恢复到：batch_size * seq_length * hidden_size
-#         context_layer = torch.matmul(attention_probs, value_layer)
-#         context_layer = context_layer.permute(0, 2, 1,3).contiguous()  # contiguous()的作用是在permute(0, 2, 1, 3)或者transpose(-1, -2)之后让内存变得连续，加快计算效率
-#         new_context_layer_shape = context_layer.size()[:-2] + (self.all_head_size,)
-#         context_layer = context_layer.view(*new_context_layer_shape)
-#
-#         return context_layer
-
-
-
-''' #************************************************# '''
-
-
-''' #*********************不使用脉冲网络但是使用加法得到脉冲矩阵***************************# '''
-# class BERTSelfAttention(nn.Module):
-#     """self attention 是Bert的精髓，但它维度的变化确实比较复杂"""
-#     def __init__(self, config):
-#         super(BERTSelfAttention, self).__init__()
-#         if config.hidden_size % config.num_attention_heads != 0:
-#             raise ValueError(
-#                 "The hidden size (%d) is not a multiple of the number of attention "
-#                 "heads (%d)" % (config.hidden_size, config.num_attention_heads))
-#         self.num_attention_heads = config.num_attention_heads
-#         self.attention_head_size = int(config.hidden_size / config.num_attention_heads)
-#         self.all_head_size = self.num_attention_heads * self.attention_head_size
-#         # 注意：这里的 all_head_size 就等于config.hidden_size，应该是一种简化，或者是为了从embedding到最后输出维度都保持一致
-#         # 这样使得多个attention头合起来维度还是config.hidden_size
-#         # 而attention_head_size就是每个attention头的维度，这个维度其实是可以人为指定的，但实现起来代码会比较麻烦
-#
-#         self.query = nn.Linear(config.hidden_size, self.all_head_size) #config.hidden_size=512
-#         self.key = nn.Linear(config.hidden_size, self.all_head_size)
-#         self.value = nn.Linear(config.hidden_size, self.all_head_size)
-#
-#         self.dropout = nn.Dropout(config.attention_probs_dropout_prob)
-#     def transpose_for_scores(self, x):
-#         # shape of x: batch_size * seq_length * hidden_size
-#         # 这个操作是把hidden_size分解为 self.num_attention_heads * self.attention_head_size
-#         # 然后再交换 seq_length维度 和 num_attention_heads维度
-#         # 为什么要做这一步：因为attention是要对query中的每个字和key中的每个字做点积，即是在 seq_length 维度上
-#         # query和key的点积是 [seq_length * attention_head_size] * [attention_head_size * seq_length]=[seq_length * seq_length]
-#         new_x_shape = x.size()[:-1] + (
-#         self.num_attention_heads, self.attention_head_size)  # 这里是一个维度拼接：(1,2)+(4,5) -> (1, 2, 4, 5)
-#         x = x.view(*new_x_shape)
-#         return x.permute(0, 2, 1, 3)
-#     def forward(self, hidden_states,attention_mask):  # attention_mask：形状为 [batch_size, 1, 1, seq_length]，用于在计算注意力时忽略填充位置（通常是填充的零值）。
-#             # shape of hidden_states: batch_size * seq_length * hidden_size 表示一批输入序列，每个序列中的每个元素由 hidden_size 维度的向量表示。
-#             # shape of mixed_*_layer: batch_size * seq_length * hidden_size
-#         mixed_query_layer = self.query(hidden_states)  # .detach() #通过 nn.Linear 进行线性变换，将 hidden_states 投影为 query。输出形状为 [batch_size, seq_length, hidden_size]。
-#         mixed_key_layer = self.key(hidden_states)  # .detach()  #通过 nn.Linear 进行线性变换，将 hidden_states 投影为 key。输出形状与 query 相同，为 [batch_size, seq_length, hidden_size]。
-#         mixed_value_layer = self.value(hidden_states)  # 通过 nn.Linear 进行线性变换，将 hidden_states 投影为 value。输出形状与 query 和 key 相同，为 [batch_size, seq_length, hidden_size]。
-#         query_layer = self.transpose_for_scores(mixed_query_layer)
-#         key_layer = self.transpose_for_scores(mixed_key_layer)
-#         value_layer = self.transpose_for_scores(mixed_value_layer)
-#         hadamard_key_val = torch.mul(query_layer, key_layer)
-#         column_sums_hadamard_key_val = torch.sum(hadamard_key_val, dim=0)
-#         context_layer = column_sums_hadamard_key_val + value_layer
-#         attention_mask_expanded = attention_mask.expand(-1, 12, -1, -1)  # [32, 12, 1, 256] -> [32, 12, 256, 256]
-#         context_layer_expanded = context_layer.repeat(1, 1, 1, 4)  # [32, 12, 256, 64] -> [32, 12, 256, 256]
-#         context_layer_with_mask = context_layer_expanded + attention_mask_expanded
-#         context_layer = F.adaptive_avg_pool2d(context_layer_with_mask,(256, 64))  # [32, 12, 256, 256] -> [32, 12, 256, 64]
-#
-#             # context_layer = context_layer+attention_mask
-#             # print(context_layer.shape, '111111111111111111111111111111111111111')
-#         context_layer = context_layer.permute(0, 2, 1,3).contiguous()  # contiguous()的作用是在permute(0, 2, 1, 3)或者transpose(-1, -2)之后让内存变得连续，加快计算效率
-#         new_context_layer_shape = context_layer.size()[:-2] + (self.all_head_size,)  # [32,256,768]
-#             # print(new_context_layer_shape,'222222222222222222222222222222222222222')
-#         context_layer = context_layer.view(*new_context_layer_shape)  # [32,256,768]
-#             # print(context_layer.shape,'33333333333333333333333333333333333333')
-#
-#         return context_layer
-''' #************************************************# '''
-
-
-''' #************************************************# '''
-import pytorch_spiking
 class CustomLIFNeuron(nn.Module):
     def __init__(self, tau=2.0, v_threshold=1.0, dt=1.0):
         super(CustomLIFNeuron, self).__init__()
@@ -550,10 +309,9 @@ class CustomIFNeuron(nn.Module):
         
         return spike, v_curr
 
-class BERTSelfAttention(nn.Module):
-    """self attention 是Bert的精髓，但它维度的变化确实比较复杂"""
+class DynamicHybridModulation(nn.Module):
     def __init__(self, config):
-        super(BERTSelfAttention, self).__init__()
+        super(DynamicHybridModulation, self).__init__()
         if config.hidden_size % config.num_attention_heads != 0:
             raise ValueError(
                 "The hidden size (%d) is not a multiple of the number of attention "
@@ -564,25 +322,19 @@ class BERTSelfAttention(nn.Module):
         self.query = nn.Linear(config.hidden_size, self.all_head_size) #config.hidden_size=512
         self.key = nn.Linear(config.hidden_size, self.all_head_size)
         self.value = nn.Linear(config.hidden_size, self.all_head_size)
-
         self.dropout = nn.Dropout(config.attention_probs_dropout_prob)
-        self.spiking_activation_q = pytorch_spiking.SpikingActivation(
+        self.spiking_activation_q = DualThresholdSelfregulatingIntegrateAction(
             torch.nn.Tanh(), dt=1, spiking_aware_training=True
         )
-        self.spiking_activation_k = pytorch_spiking.SpikingActivation(
+        self.spiking_activation_k = DualThresholdSelfregulatingIntegrateAction(
             torch.nn.Tanh(), dt=1, spiking_aware_training=True
         )
-        self.spiking_activation_v = pytorch_spiking.SpikingActivation(
+        self.spiking_activation_v = DualThresholdSelfregulatingIntegrateAction(
             torch.nn.Tanh(), dt=1, spiking_aware_training=True
         )
-        # 定义可学习的参数 alpha，初始化为 0.5（或其他合理的值）
-        self.alpha_spiking = nn.Parameter(torch.tensor(0.52))
-        # self.alpha_orig = nn.Parameter(torch.tensor(0.5))
-        self.alpha_orig = nn.Parameter(torch.tensor(1.07))  # 随机初始化在 1 到 2 之间
-
-        # self.Lowpass = pytorch_spiking.Lowpass(units=256,tau=0.1, dt=1, return_sequences=False)
-       
-        
+        self.alpha_spiking = hbert_config.alpha_spiking
+        self.alpha_orig = hbert_config.alpha_orig  
+        self.k = hbert_config.k
         self.iflayer = CustomLIFNeuron(v_threshold=1.0)
         self.IF = CustomIFNeuron()
     def transpose_for_scores(self, x):
@@ -590,38 +342,23 @@ class BERTSelfAttention(nn.Module):
         x = x.view(*new_x_shape)
         return x.permute(0, 2, 1, 3)
 
-    def forward(self, hidden_states, attention_mask): #attention_mask：形状为 [batch_size, 1, 1, seq_length]，用于在计算注意力时忽略填充位置（通常是填充的零值）。
-        mixed_query_layer = self.query(hidden_states)#.detach()#通过 nn.Linear 进行线性变换，将 hidden_states 投影为 query。输出形状为 [batch_size, seq_length, hidden_size]。
-        mixed_query_layer = self.spiking_activation_q(mixed_query_layer)
-        # mixed_query_layer = self.IF(mixed_query_layer)[0]
-
-
-        mixed_key_layer = self.key(hidden_states)#.detach() #通过 nn.Linear 进行线性变换，将 hidden_states 投影为 key。输出形状与 query 相同，为 [batch_size, seq_length, hidden_size]。
+    def forward(self, hidden_states, attention_mask): 
+        mixed_query_layer = self.spiking_activation_q(self.query(hidden_states))
+        mixed_key_layer = self.key(hidden_states)
         mixed_key_layer = self.alpha_spiking*self.spiking_activation_k(mixed_key_layer)+self.alpha_orig*mixed_key_layer
-        # mixed_key_layer = self.alpha_spiking*self.IF(mixed_key_layer)[0]+self.alpha_orig*mixed_key_layer
-        # mixed_key_layer = self.iflayer(mixed_key_layer)[0]
-
-        mixed_value_layer = self.value(hidden_states).detach()  #通过 nn.Linear 进行线性变换，将 hidden_states 投影为 value。输出形状与 query 和 key 相同，为 [batch_size, seq_length, hidden_size]。
-        # mixed_value_layer = self.spiking_activation_v(mixed_value_layer)
-        
+        mixed_value_layer = self.value(hidden_states).detach()  
         query_layer = self.transpose_for_scores(mixed_query_layer)
-        # query_layer = self.temporal_pooling(query_layer)
         key_layer = self.transpose_for_scores(mixed_key_layer)
         value_layer = self.transpose_for_scores(mixed_value_layer)
-
         attention_scores = torch.matmul(query_layer, key_layer.transpose(-1, -2))
         attention_scores /= math.sqrt(self.attention_head_size)
-
-
-        attention_scores = attention_scores + attention_mask# + 0.0001*self.select_linesnn(attention_scores,auto_balance_snn=True)
+        attention_scores = attention_scores + attention_mask + self.k*self.select_linesnn(attention_scores,auto_balance_snn=True)
         attention_probs = nn.Softmax(dim=-1)(attention_scores)
         attention_probs = self.dropout(attention_probs)     #防止过拟合
-
         context_layer = torch.matmul(attention_probs, value_layer)
         context_layer = context_layer.permute(0, 2, 1, 3).contiguous()#contiguous()的作用是在permute(0, 2, 1, 3)或者transpose(-1, -2)之后让内存变得连续，加快计算效率
         new_context_layer_shape = context_layer.size()[:-2] + (self.all_head_size,)
         context_layer = context_layer.view(*new_context_layer_shape)
-
         return context_layer
     # 定义损失函数，用于约束 alpha_spiking 和 alpha_orig
     def alpha(self):
@@ -702,158 +439,6 @@ class BERTSelfAttention(nn.Module):
                 ratio = self.calculate_nonzero_ratio(matrix)
                 f.write(f"Matrix {i + 1}: Nonzero Ratio = {ratio:.4f}\n")  # 写入文件
 
-''' #************************************************# '''
-
-
-# class BERTSelfAttention(nn.Module):
-#     def __init__(self, config):
-#         super(BERTSelfAttention, self).__init__()
-#         if config.hidden_size % config.num_attention_heads != 0:
-#             raise ValueError(
-#                 "The hidden size (%d) is not a multiple of the number of attention "
-#                 "heads (%d)" % (config.hidden_size, config.num_attention_heads))
-#         self.num_attention_heads = config.num_attention_heads
-#         self.attention_head_size = int(config.hidden_size / config.num_attention_heads)
-#         self.all_head_size = self.num_attention_heads * self.attention_head_size
-#         self.query = nn.Linear(config.hidden_size, self.all_head_size) #config.hidden_size=512
-#         self.key = nn.Linear(config.hidden_size, self.all_head_size)
-#         self.value = nn.Linear(config.hidden_size, self.all_head_size)
-#         self.dropout = nn.Dropout(config.attention_probs_dropout_prob)
-#         self.spiking_activation_q = pytorch_spiking.SpikingActivation(
-#             torch.nn.Tanh(), dt=1, spiking_aware_training=True
-#         )
-#         self.spiking_activation_k = pytorch_spiking.SpikingActivation(
-#             torch.nn.Tanh(), dt=1, spiking_aware_training=True
-#         )
-#         self.spiking_activation_v = pytorch_spiking.SpikingActivation(
-#             torch.nn.Tanh(), dt=1, spiking_aware_training=True
-#         )
-#         self.spiking_activation_sum = pytorch_spiking.SpikingActivation(
-#             torch.nn.Tanh(), dt=1, spiking_aware_training=True
-#         )
-#         self.temporal_pooling = pytorch_spiking.TemporalAvgPool()
-#     def transpose_for_scores(self, x):
-#         # shape of x: batch_size * seq_length * hidden_size
-#         # 这个操作是把hidden_size分解为 self.num_attention_heads * self.attention_head_size
-#         # 然后再交换 seq_length维度 和 num_attention_heads维度
-#         # 为什么要做这一步：因为attention是要对query中的每个字和key中的每个字做点积，即是在 seq_length 维度上
-#         # query和key的点积是 [seq_length * attention_head_size] * [attention_head_size * seq_length]=[seq_length * seq_length]
-#         new_x_shape = x.size()[:-1] + (self.num_attention_heads, self.attention_head_size)  # 这里是一个维度拼接：(1,2)+(4,5) -> (1, 2, 4, 5)
-#         x = x.view(*new_x_shape)
-#         return x.permute(0, 2, 1, 3)
-#
-#     def forward(self, hidden_states, attention_mask):
-#         mixed_query_layer = self.query(hidden_states)#b,seq_length,hidden_size
-#         mixed_query_layer = self.spiking_activation_q(mixed_query_layer)
-#         mixed_key_layer = self.key(hidden_states)
-#         mixed_key_layer = self.spiking_activation_k(mixed_key_layer)
-#         mixed_value_layer = self.value(hidden_states)
-#         mixed_value_layer = self.spiking_activation_v(mixed_value_layer)
-#
-#         query_layer = self.transpose_for_scores(mixed_query_layer)
-#         key_layer = self.transpose_for_scores(mixed_key_layer)
-#         value_layer = self.transpose_for_scores(mixed_value_layer)
-#
-#         hadamard_key_val = torch.mul(query_layer,key_layer)
-#         column_sums_hadamard_key_val = torch.sum(hadamard_key_val, dim=0)
-#         column_sums_hadamard_key_val_snn = self.spiking_activation_sum(column_sums_hadamard_key_val)
-#         context_layer = column_sums_hadamard_key_val_snn + value_layer#[32,12,256,64]
-#
-#
-#
-#         attention_mask_expanded = attention_mask.expand(-1, 12, -1, -1)  # [32, 12, 1, 256] -> [32, 12, 256, 256]
-#         context_layer_expanded = context_layer.repeat(1, 1, 1, 4)  # [32, 12, 256, 64] -> [32, 12, 256, 256]
-#         context_layer_with_mask = context_layer_expanded + attention_mask_expanded
-#         context_layer = F.adaptive_avg_pool2d(context_layer_with_mask, (256, 64))  # [32, 12, 256, 256] -> [32, 12, 256, 64]
-#
-#         # context_layer = context_layer+attention_mask
-#         # print(context_layer.shape, '111111111111111111111111111111111111111')
-#         context_layer = context_layer.permute(0, 2, 1,3).contiguous()  # contiguous()的作用是在permute(0, 2, 1, 3)或者transpose(-1, -2)之后让内存变得连续，加快计算效率
-#         new_context_layer_shape = context_layer.size()[:-2] + (self.all_head_size,)#[32,256,768]
-#         # print(new_context_layer_shape,'222222222222222222222222222222222222222')
-#         context_layer = context_layer.view(*new_context_layer_shape)#[32,256,768]
-#         # print(context_layer.shape,'33333333333333333333333333333333333333')
-#
-#         return context_layer
-
-
-#
-# class BERTSelfAttention(nn.Module):
-#     """self attention 是Bert的精髓，但它维度的变化确实比较复杂"""
-#     def __init__(self, config):
-#         super(BERTSelfAttention, self).__init__()
-#         if config.hidden_size % config.num_attention_heads != 0:
-#             raise ValueError(
-#                 "The hidden size (%d) is not a multiple of the number of attention "
-#                 "heads (%d)" % (config.hidden_size, config.num_attention_heads))
-#         self.num_attention_heads = config.num_attention_heads
-#         self.attention_head_size = int(config.hidden_size / config.num_attention_heads)
-#         self.all_head_size = self.num_attention_heads * self.attention_head_size
-#         # 注意：这里的 all_head_size 就等于config.hidden_size，应该是一种简化，或者是为了从embedding到最后输出维度都保持一致
-#         # 这样使得多个attention头合起来维度还是config.hidden_size
-#         # 而attention_head_size就是每个attention头的维度，这个维度其实是可以人为指定的，但实现起来代码会比较麻烦
-#
-#         self.query = nn.Linear(config.hidden_size, self.all_head_size) #config.hidden_size=512
-#         self.key = nn.Linear(config.hidden_size, self.all_head_size)
-#         self.value = nn.Linear(config.hidden_size, self.all_head_size)
-#
-#         self.dropout = nn.Dropout(config.attention_probs_dropout_prob)
-#
-#
-#     def transpose_for_scores(self, x):
-#         # shape of x: batch_size * seq_length * hidden_size
-#         # 这个操作是把hidden_size分解为 self.num_attention_heads * self.attention_head_size
-#         # 然后再交换 seq_length维度 和 num_attention_heads维度
-#         # 为什么要做这一步：因为attention是要对query中的每个字和key中的每个字做点积，即是在 seq_length 维度上
-#         # query和key的点积是 [seq_length * attention_head_size] * [attention_head_size * seq_length]=[seq_length * seq_length]
-#         new_x_shape = x.size()[:-1] + (self.num_attention_heads, self.attention_head_size)  # 这里是一个维度拼接：(1,2)+(4,5) -> (1, 2, 4, 5)
-#         x = x.view(*new_x_shape)
-#         return x.permute(0, 2, 1, 3)
-#
-#     def forward(self, hidden_states, attention_mask): #attention_mask：形状为 [batch_size, 1, 1, seq_length]，用于在计算注意力时忽略填充位置（通常是填充的零值）。
-#         # shape of hidden_states: batch_size * seq_length * hidden_size 表示一批输入序列，每个序列中的每个元素由 hidden_size 维度的向量表示。
-#         # shape of mixed_*_layer: batch_size * seq_length * hidden_size
-#         # hidden_states = hidden_states.detach()
-#         mixed_query_layer = self.query(hidden_states)#.detach() #通过 nn.Linear 进行线性变换，将 hidden_states 投影为 query。输出形状为 [batch_size, seq_length, hidden_size]。
-#         # mixed_query_layer = self.lif1(hidden_states)
-#         mixed_key_layer = self.key(hidden_states) #.detach()  #通过 nn.Linear 进行线性变换，将 hidden_states 投影为 key。输出形状与 query 相同，为 [batch_size, seq_length, hidden_size]。
-#         mixed_value_layer = self.value(hidden_states) #通过 nn.Linear 进行线性变换，将 hidden_states 投影为 value。输出形状与 query 和 key 相同，为 [batch_size, seq_length, hidden_size]。
-#         # shape of query_layer: batch_size * num_attention_heads * seq_length * attention_head_size
-#         # transpose_for_scores函数调整矩阵的形状 首先将 hidden_size 分解为 num_attention_heads * attention_head_size。
-#         # 例如，hidden_size 为 768，num_attention_heads 为 12，则 attention_head_size 为 64。
-#         query_layer = self.transpose_for_scores(mixed_query_layer)
-#         key_layer = self.transpose_for_scores(mixed_key_layer)
-#         value_layer = self.transpose_for_scores(mixed_value_layer)
-#
-#         # Take the dot product between "query" and "key" to get the raw attention scores.
-#         # shape of attention_scores: batch_size * num_attention_heads * seq_length * seq_length
-#         attention_scores = torch.matmul(query_layer, key_layer.transpose(-1, -2))
-#         attention_scores /= math.sqrt(self.attention_head_size)
-#
-#         # Apply the attention mask is (precomputed for all layers in BertModel forward() function)
-#         # shape of attention_mask: batch_size * 1 * 1 * seq_length. 它可以自动广播到和attention_scores一样的维度
-#         # 我们初始输入的attention_mask是：batch_size * seq_length，做了两次unsqueeze之后得到当前的attention_mask
-#         # print(attention_scores.shape,'attention_scoresattention_scoresattention_scoresattention_scores')#32, 12, 256, 256
-#         attention_scores = attention_scores + attention_mask
-#         # print(attention_mask.shape,'attention_maskattention_maskattention_maskattention_mask')
-#         # print(attention_scores.shape,'1111111111111111111111111111')
-#         # Normalize the attention scores to probabilities. Softmax 不改变维度
-#         # shape of attention_scores: batch_size * num_attention_heads * seq_length * seq_length
-#         attention_probs = nn.Softmax(dim=-1)(attention_scores)
-#         attention_probs = self.dropout(attention_probs)     #防止过拟合
-#
-#         # shape of value_layer: batch_size * num_attention_heads * seq_length * attention_head_size
-#         # shape of first context_layer: batch_size * num_attention_heads * seq_length * attention_head_size
-#         # shape of second context_layer: batch_size * seq_length * num_attention_heads * attention_head_size
-#         # context_layer 维度恢复到：batch_size * seq_length * hidden_size
-#         context_layer = torch.matmul(attention_probs, value_layer)
-#         context_layer = context_layer.permute(0, 2, 1, 3).contiguous()#contiguous()的作用是在permute(0, 2, 1, 3)或者transpose(-1, -2)之后让内存变得连续，加快计算效率
-#         new_context_layer_shape = context_layer.size()[:-2] + (self.all_head_size,)
-#         context_layer = context_layer.view(*new_context_layer_shape)
-#
-#         return context_layer
-
-
 class BERTSelfOutput(nn.Module):
     """BERTSelfAttention 之后还有一个 feed forward,dropout,add and norm """
     def __init__(self, config):
@@ -873,7 +458,7 @@ class BERTAttention(nn.Module):
     """一个BERT block中的前面部分"""
     def __init__(self, config):
         super(BERTAttention, self).__init__()
-        self.self = BERTSelfAttention(config)
+        self.self = DynamicHybridModulation(config)
         self.output = BERTSelfOutput(config)
 
     def forward(self, input_tensor, attention_mask):
@@ -947,26 +532,12 @@ class BERTPooler(nn.Module):
 
         self.dense = nn.Linear(config.hidden_size, config.hidden_size)
         self.activation = nn.Tanh()
-        self.spiking_activation = pytorch_spiking.SpikingActivation(
-            torch.nn.Tanh(), dt=0.01, spiking_aware_training=True
-        )
-        self.temporal_pooling = pytorch_spiking.TemporalAvgPool()
-
+        
     def forward(self, hidden_states):
         # We "pool" the model by simply taking the hidden state corresponding
         # to the first token.
         first_token_tensor = hidden_states[:, 0]
         pooled_output = self.dense(first_token_tensor)
-
-
-        '''这中间是我修改的snn脉冲激活-利用可感知脉冲神经网络替代原始的脉冲激活函数'''
-        # 添加时间维度
-        # pooled_output = pooled_output.unsqueeze(1)  # [batch_size, 1, hidden_size]
-        # # print(pooled_output.shape,'======================')
-        # spike = self.spiking_activation(pooled_output)
-        # pooled_output = self.temporal_pooling(spike)
-        '''***************************'''
-
         pooled_output = self.activation(pooled_output)
         return pooled_output
 
@@ -1149,27 +720,11 @@ if __name__=="__main__":
     input_ids = torch.LongTensor([[31, 51, 99], [15, 5, 0]])
     input_mask = torch.LongTensor([[1, 1, 1], [1, 1, 0]])
     token_type_ids = torch.LongTensor([[0, 0, 1], [0, 2, 0]])
-    from torchsummary import summary
-    from thop import profile
+    # from torchsummary import summary
+    # from thop import profile
     config = BertConfig(vocab_size=32000, hidden_size=512,
         num_hidden_layers=8, num_attention_heads=8, intermediate_size=1024)
 
     model = BertModel(config=config)
 
-    # 或者直接传递相应类型的张量进行检查：
-    # input_ids = torch.LongTensor([[31, 51, 99], [15, 5, 0]])
-    # input_mask = torch.LongTensor([[1, 1, 1], [1, 1, 0]])
-    # token_type_ids = torch.LongTensor([[0, 0, 1], [0, 2, 0]])
-
-    # 打印模型参数量信息
-    # summary(model, input_size=(input_ids))
-
-    # 执行前向传播，确保一切正常
-    # 计算模型的参数量
-    total_params = sum(p.numel() for p in model.parameters())
-    print(f'Total parameters: {total_params}')
-    flops, params = profile(model, inputs=(input_ids, token_type_ids, input_mask))
-    print(f'FLOPs: {flops}')
-    print(f'Params: {params}')
-    all_encoder_layers, pooled_output = model(input_ids, token_type_ids, input_mask)
-    # print(pooled_output)
+  
