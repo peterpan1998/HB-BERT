@@ -632,8 +632,7 @@ def main():
                 if n_gpu > 1:
                     loss = loss.mean()  # mean() to average on multi-gpu.
 
-                '''--------------# 计算正则化损失（比如 alpha_spiking 和 alpha_orig 的系数损失）------------------------------'''
-                # 计算正则化损失（比如 alpha_spiking 和 alpha_orig 的系数损失）
+                   # 计算正则化损失（比如 alpha_spiking 和 alpha_orig 的系数损失）
                 layer_coeff_loss = 0
                 for layer in model.bert.encoder.layer:
                     layer_coeff_loss += layer.attention.self.coefficient_loss()
@@ -642,12 +641,9 @@ def main():
                 loss = loss + 0.1*coefficient_loss # 0.1 是正则化损失的权重，可以根据需要调整
                 # for i, layer in enumerate(model.bert.encoder.layer):
                 #     print(layer.attention.self.alpha(), f'Layer {i} alpha =============================================')
-                '''--------------# 计算正则化损失（比如 alpha_spiking 和 alpha_orig 的系数损失）------------------------------'''
-
+            
 
                 if args.fp16 and args.loss_scale != 1.0:
-                    # rescale loss for fp16 training
-                    # see https://docs.nvidia.com/deeplearning/sdk/mixed-precision-training/index.html
                     loss = loss * args.loss_scale
                 if args.gradient_accumulation_steps > 1:
                     loss = loss / args.gradient_accumulation_steps
