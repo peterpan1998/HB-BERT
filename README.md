@@ -13,7 +13,7 @@ HB-BERT is a research-oriented project that extends BERT (Bidirectional Encoder 
 2. **Install Required Packages**
 
    The project mainly relies on:
-   - Python 3.6+
+   - Python 3.9+
    - PyTorch
    - NumPy
    - tqdm
