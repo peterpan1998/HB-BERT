@@ -5,7 +5,6 @@ class DualThresholdSelfregulatingIntegrateFunction(torch.autograd.Function):
     @staticmethod
     def forward(ctx,inputs,activation,dt=0.001,initial_state=None,spiking_aware_training=True,return_sequences=False,training=False,T=1):
         step = T
-        print(step)
         ctx.activation = activation
         ctx.return_sequences = return_sequences
         ctx.save_for_backward(inputs)
