@@ -11,7 +11,7 @@ import time
 # 自动检测设备
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
-class SpikingActivationFunction(torch.autograd.Function):
+class DualThresholdSelfregulatingIntegrateFunction(torch.autograd.Function):
     """
     Function for converting an arbitrary activation function to a spiking equivalent.
     """
@@ -67,9 +67,9 @@ class SpikingActivationFunction(torch.autograd.Function):
                 + (None,) * 7
             )
 
-spiking_activation_autograd = SpikingActivationFunction.apply
+dual_threshold_selfregulating_integrate_autograd = DualThresholdSelfregulatingIntegrateFunction.apply
 
-class SpikingActivation(nn.Module):
+class DualThresholdSelfregulatingIntegrate(nn.Module):
     def __init__(self, activation, dt=0.001, initial_state=None, spiking_aware_training=True, return_sequences=True):
         super().__init__()
         self.activation = activation
@@ -83,7 +83,7 @@ class SpikingActivation(nn.Module):
             initial_state = self.initial_state.to(device)
         else:
             initial_state = None
-        return spiking_activation_autograd(
+        return dual_threshold_selfregulating_integrate_autograd(
             inputs,
             self.activation,
             self.dt,
@@ -137,7 +137,7 @@ class TemporalAvgPool(nn.Module):
         inputs = inputs.to(device)
         return torch.mean(inputs, dim=self.dim)
 
-def spiking_activation(inputs, activation, dt=0.001, initial_state=None, return_sequences=False, use_parallel=True):
+def DualThresholdSelfregulatingIntegrateAction(inputs, activation, dt=0.001, initial_state=None, return_sequences=False, use_parallel=True):
     inputs = inputs.to(device)
     batch_size, n_steps, n_neurons = inputs.shape
     if initial_state is None:
@@ -169,3 +169,4 @@ def spiking_activation(inputs, activation, dt=0.001, initial_state=None, return_
             return n_spikes
 
 
+            
