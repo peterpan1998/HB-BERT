@@ -324,13 +324,13 @@ class DynamicHybridModulation(nn.Module):
         self.value = nn.Linear(config.hidden_size, self.all_head_size)
         self.dropout = nn.Dropout(config.attention_probs_dropout_prob)
         self.spiking_activation_q = DualThresholdSelfregulatingIntegrateAction(
-            torch.nn.Tanh(), dt=1, spiking_aware_training=True
+            torch.nn.Tanh(), dt=1, spiking_aware_training=True,T=1
         )
         self.spiking_activation_k = DualThresholdSelfregulatingIntegrateAction(
-            torch.nn.Tanh(), dt=1, spiking_aware_training=True
+            torch.nn.Tanh(), dt=1, spiking_aware_training=True,T=1
         )
         self.spiking_activation_v = DualThresholdSelfregulatingIntegrateAction(
-            torch.nn.Tanh(), dt=1, spiking_aware_training=True
+            torch.nn.Tanh(), dt=1, spiking_aware_training=True,T=1
         )
         self.alpha_spiking = hbert_config.alpha_spiking
         self.alpha_orig = hbert_config.alpha_orig  
