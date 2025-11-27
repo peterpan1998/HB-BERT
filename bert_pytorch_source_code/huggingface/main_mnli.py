@@ -76,7 +76,7 @@ class DynamicHybridModulation(nn.Module):
         self.alpha_spiking = nn.Parameter(torch.tensor(alpha_spiking_q))
         self.alpha_orig = nn.Parameter(torch.tensor(alpha_origin_q))
         self.alpha_spiking_q = nn.Parameter(torch.tensor(0.52))
-        self.alpha_orig_q = nn.Parameter(torch.tensor(1.07))  # 随机初始化在 1 到 2 之间
+        self.alpha_orig_q = nn.Parameter(torch.tensor(1.07)) 
         self.lif1 = neuron.MultiStepLIFNode(tau=2., surrogate_function=surrogate.ATan(alpha=2.0), backend='torch',
                                             v_threshold=1.)
         self.IF = neuron.MultiStepIFNode(surrogate_function=surrogate.ATan(alpha=2.0), backend='torch',
@@ -241,7 +241,7 @@ class CustomBertModel(BertForSequenceClassification):
             return (total_loss, logits) 
         return outputs
 if __name__ == "__main__":
-    print("当前模块包含模型定义。请运行 train.py 启动训练流程。")
+    print("The current module contains model definitions. Please run train.py to start the training process.")
 
 
 
