@@ -7,7 +7,6 @@ Demonstrate how to import and use configuration parameters from config.py
 from config import TRAINING_CONFIG, SPIKING_CONFIG, FILE_PATHS, DATA_CONFIG, EVAL_CONFIG, DEVICE_CONFIG
 
 def print_all_configs():
-    """打印所有配置参数"""
     print("=" * 50)
     print("allocation:")
     print("=" * 50)
