@@ -7,7 +7,6 @@ class DualThresholdSelfregulatingIntegrateFunction(torch.autograd.Function):
 class DualThresholdSelfregulatingIntegrate(torch.nn.Module):  # pylint: disable=abstract-method
     def __init__(self,activation,dt=0.001,initial_state=None,spiking_aware_training=True,return_sequences=True,T=1):
         super().__init__()
-        # 定义可学习电压阈值参数
         #self.voltage_threshold = nn.Parameter(torch.tensor(1.0), requires_grad=True)
         self.activation = activation
         self.initial_state = initial_state
