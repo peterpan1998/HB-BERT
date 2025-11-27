@@ -185,105 +185,45 @@ class CustomLIFNeuron1(nn.Module):
         self.tau = tau
         self.v_Threshold = v_threshold
         self.dt = dt
-        self.temperature = temperature  # 新增温度参数，控制sigmoid的陡峭程度
+        self.temperature = temperature 
     
     def forward(self, input_current, v_prev=None):
         if v_prev is None:
             v_prev = torch.zeros_like(input_current)
-        
-        # 前向传播：计算当前膜电位和脉冲
         dv = self.dt / self.tau * (-v_prev + input_current)
         v_curr = v_prev + dv
-        
-        # 计算脉冲，保持硬性阈值判断以发放脉冲
-        # spike = (v_curr >= self.v_Threshold).float()
         spike = torch.where(v_curr >= self.v_Threshold, 1.0, 0.0)
-
-        
-        # 重置膜电位
         v_curr = torch.where(spike == 1, torch.zeros_like(v_curr), v_curr)
-        
         return spike, v_curr
     
     def backward_hook(self, grad_output):
-        """
-        自定义反向传播钩子，使用sigmoid函数近似梯度。
-        """
         input_current = self.input_data
         v_prev = self.v_prev_data
-        
-        # 计算当前膜电位
         dv = self.dt / self.tau * (-v_prev + input_current)
         v_curr = v_prev + dv
-        
-        # 计算sigmoid函数的导数
         sigmoid_grad = torch.sigmoid((v_curr - self.v_Threshold) / self.temperature) * (1 - torch.sigmoid((v_curr - self.v_Threshold) / self.temperature))
-        
-        # 将梯度与当前膜电位和输入电流相关联
         grad_input_current = grad_output * sigmoid_grad
-        
         return grad_input_current,
 
 class CustomIFNeuron1(nn.Module):
     def __init__(self, v_threshold=1.0, dt=0.1):
-        """
-        初始化IF神经元参数
-        
-        Parameters:
-         - v_Threshold (float): 神经元发放尖峰的阈值，默认为1.0
-         - dt (float): 时间步长，默认为0.1
-         """
         super(CustomIFNeuron, self).__init__()
-        self.v_threshold = v_threshold  # 阈值电压
-        self.dt = dt                    # 时间步长
-        self.reset()                   # 初始化膜电位
+        self.v_threshold = v_threshold 
+        self.dt = dt                   
+        self.reset()                  
 
     def reset(self):
-        """
-        重置神经元的膜电位到初始状态。
-        
-        Returns:
-         - None
-        """
-        # 初始化为一个与输入形状相同的零张量。注意：这里需要在forward中动态确定输入形状，
-        # 因此实际使用时可能需要在第一次调用forward后进行初始化。
-        self.membrane_potential = None  # 延迟初始化
+        self.membrane_potential = None 
 
     def forward(self, input_current):
-        """
-        前向传播函数，计算每个时间步的膜电位和尖峰输出
-        
-        Parameters:
-         - input_current (torch.Tensor): 当前时间步输入的电流
-
-        Returns:
-         - spike (torch.Tensor): 当前时间步是否发放尖峰（0或1）
-        """
-        # 第一次调用时初始化膜电位
         if self.membrane_potential is None:
             batch_size = input_current.size(0)
             self.membrane_potential = torch.zeros_like(input_current).to(input_current.device)
-
-        # 更新膜电位。假设输入电流的形状为[batch_size, ...]
-        # 这里将input_current乘以dt，并加到membrane_potential上
         self.membrane_potential += input_current * self.dt
-
-        # 判断是否发放尖峰
         spike = (self.membrane_potential >= self.v_threshold).float()
-        
-        # 尖峰后重置膜电位。使用torch.where函数，仅当spike为1时才重置
         self.membrane_potential = torch.where(spike > 0, torch.zeros_like(self.membrane_potential), self.membrane_potential)
-
         return spike
-
     def reset_(self):
-        """
-        重置神经元的膜电位到初始状态。
-        
-        Returns:
-         - None
-        """
-        # 在序列任务中，可能需要在每个样本之间或每个时间步之后重置状态
         if self.membrane_potential is not None:
             batch_size = self.membrane_potential.size(0)
             self.membrane_potential = torch.zeros_like(self.membrane_potential).to(self.membrane_potential.device)
@@ -292,21 +232,12 @@ class CustomIFNeuron(nn.Module):
         super(CustomIFNeuron, self).__init__()
         self.v_Threshold = v_threshold
         self.dt = dt
-    
     def forward(self, input_current, v_prev=None):
         if v_prev is None:
             v_prev = torch.zeros_like(input_current)
-        
-        # 计算dv，不考虑泄漏电流
         dv = self.dt * input_current
         v_curr = v_prev + dv
-        
-        # 发放脉冲
-        spike = torch.where(v_curr >= self.v_Threshold, 1.0, 0.0)
-        
-        # 重置膜电位
         v_curr = torch.where(spike == 1, torch.zeros_like(v_curr), v_curr)
-        
         return spike, v_curr
 
 class DynamicHybridModulation(nn.Module):
@@ -338,7 +269,7 @@ class DynamicHybridModulation(nn.Module):
         self.iflayer = CustomLIFNeuron(v_threshold=1.0)
         self.IF = CustomIFNeuron()
     def transpose_for_scores(self, x):
-        new_x_shape = x.size()[:-1] + (self.num_attention_heads, self.attention_head_size)  # 这里是一个维度拼接：(1,2)+(4,5) -> (1, 2, 4, 5)
+        new_x_shape = x.size()[:-1] + (self.num_attention_heads, self.attention_head_size) 
         x = x.view(*new_x_shape)
         return x.permute(0, 2, 1, 3)
 
@@ -356,29 +287,23 @@ class DynamicHybridModulation(nn.Module):
         attention_probs = nn.Softmax(dim=-1)(attention_scores)
         attention_probs = self.dropout(attention_probs)     #防止过拟合
         context_layer = torch.matmul(attention_probs, value_layer)
-        context_layer = context_layer.permute(0, 2, 1, 3).contiguous()#contiguous()的作用是在permute(0, 2, 1, 3)或者transpose(-1, -2)之后让内存变得连续，加快计算效率
+        context_layer = context_layer.permute(0, 2, 1, 3).contiguous()
         new_context_layer_shape = context_layer.size()[:-2] + (self.all_head_size,)
         context_layer = context_layer.view(*new_context_layer_shape)
         return context_layer
-    # 定义损失函数，用于约束 alpha_spiking 和 alpha_orig
     def alpha(self):
         a = self.alpha_spiking
         b = self.alpha_orig
         return a,b
     def coefficient_loss(self):
-        # 让 alpha_spiking 和 alpha_orig 的和接近 1
         loss = torch.abs(self.alpha_spiking + self.alpha_orig - 1)
-
-        # 你也可以添加其他正则化项，比如 L2 正则化
         loss += (self.alpha_spiking ** 2 + self.alpha_orig ** 2)
-
         return loss
-
     def linesnn_mcz(self, x, channel, reduction=4):
-        device = x.device  # 确保所有计算在相同设备上
+        device = x.device
         _, _, h, w = x.size()
         x = x.flatten(start_dim=2)
-        # x = self.spiking_activation_v(x)
+        x = self.spiking_activation_v(x)
         x = self.IF(x)[0]
         x = self.transpose_for_line_mcz(x)
         x_h = torch.mean(x, dim=3, keepdim=True).permute(0, 1, 3, 2)
@@ -392,7 +317,7 @@ class DynamicHybridModulation(nn.Module):
     def transpose_for_line_mcz(self, x):
         _, _, hw = x.size()
         h = int(math.sqrt(hw))
-        new_x_shape = x.size()[:-1] + (h, h)  # 这里是一个维度拼接：(1,2)+(4,5) -> (1, 2, 4, 5)
+        new_x_shape = x.size()[:-1] + (h, h)
         x = x.view(*new_x_shape)
         return x
     def linesnn5(self, x):
@@ -401,12 +326,12 @@ class DynamicHybridModulation(nn.Module):
         x = x.view(x.size(0), x.size(1), 1, -1)
         x = x.view(-1, 1, h * w)
         x = nn.Conv1d(
-            in_channels=1,  # 输入通道数
-            out_channels=1,  # 输出通道数
-            kernel_size=w,  # 卷积核大小，开平方后的大小
-            stride=w,  # 步长，与卷积核大小一致
-            padding=0,  # 无填充
-            bias=False,  # 不使用偏置
+            in_channels=1,  
+            out_channels=1,  
+            kernel_size=w,  
+            stride=w, 
+            padding=0,  
+            bias=False,  
             device=device
         )(x)
         x = nn.BatchNorm1d(num_features=1,device=device)(x)
@@ -421,23 +346,16 @@ class DynamicHybridModulation(nn.Module):
         return x
     def calculate_nonzero_ratio(self,matrix):
    
-        total_elements = matrix.numel()  # 矩阵中总元素数量
-        nonzero_elements = torch.count_nonzero(matrix)  # 非零元素数量
-        ratio = nonzero_elements.float() / total_elements  # 非零元素占比
-        return ratio.item()  # 返回标量值
+        total_elements = matrix.numel()  
+        nonzero_elements = torch.count_nonzero(matrix) 
+        ratio = nonzero_elements.float() / total_elements 
+        return ratio.item() 
 
     def save_ratios_to_txt(self,matrices, filename):
-        """
-        将多个矩阵的非零元素占比逐行写入 `.txt` 文件。
-        
-        参数:
-            matrices (list of torch.Tensor): 包含多个矩阵的列表。
-            filename (str): 输出文件名。
-        """
         with open(filename, 'w') as f:
             for i, matrix in enumerate(matrices):
                 ratio = self.calculate_nonzero_ratio(matrix)
-                f.write(f"Matrix {i + 1}: Nonzero Ratio = {ratio:.4f}\n")  # 写入文件
+                f.write(f"Matrix {i + 1}: Nonzero Ratio = {ratio:.4f}\n")  
 
 class BERTSelfOutput(nn.Module):
     """BERTSelfAttention 之后还有一个 feed forward,dropout,add and norm """
@@ -450,7 +368,7 @@ class BERTSelfOutput(nn.Module):
     def forward(self, hidden_states, input_tensor):
         hidden_states = self.dense(hidden_states)
         hidden_states = self.dropout(hidden_states)
-        hidden_states = self.LayerNorm(hidden_states + input_tensor)    # skip connection 在这里
+        hidden_states = self.LayerNorm(hidden_states + input_tensor)   
         return hidden_states
 
 
