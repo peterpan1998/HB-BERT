@@ -119,9 +119,6 @@ class BERTLayerNorm(nn.Module):
 class BERTEmbeddings(nn.Module):
     def __init__(self, config):
         super(BERTEmbeddings, self).__init__()
-        """Construct the embedding module from word, position and token_type embeddings.
-        三种embedding都是可学习的，输入为单句是，只需要给input_ids，双句时才要给token_type_ids，position_ids都不用给
-        """
         self.word_embeddings = nn.Embedding(config.vocab_size, config.hidden_size)
         self.position_embeddings = nn.Embedding(config.max_position_embeddings, config.hidden_size)
         self.token_type_embeddings = nn.Embedding(config.type_vocab_size, config.hidden_size)
